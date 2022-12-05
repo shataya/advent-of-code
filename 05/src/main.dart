@@ -107,37 +107,39 @@ class Move {
 }
 
 class Crates {
-  late List<CrateStack> value;
+  late List<CrateStack> stacks;
 
-  Crates(this.value);
+  Crates(this.stacks);
 
   Crates.With(int number) {
     List<CrateStack> temp = [];
     for (var i = 0; i < number; i++) {
       temp.add(new CrateStack());
     }
-    this.value = temp;
+    this.stacks = temp;
   }
 
   add(int index, String c) {
-    value[index].addSingle(c);
+    stacks[index].addSingle(c);
   }
 
   applyMove(Move move, bool sameOrder) {
-    value[move.to].add(value[move.from].remove(move.count, sameOrder));
+    stacks[move.to].add(stacks[move.from].remove(move.count, sameOrder));
   }
 
   @override
   String toString() {
-    return value.map((e) => "[${value.indexOf(e)}] " + e.toString()).join("\n");
+    return stacks
+        .map((e) => "[${stacks.indexOf(e)}] " + e.toString())
+        .join("\n");
   }
 
   List<String> getTops() {
-    return value.map((e) => e.top()).toList();
+    return stacks.map((e) => e.top()).toList();
   }
 
   Crates copy() {
-    return new Crates(this.value.map((e) => e.copy()).toList());
+    return new Crates(this.stacks.map((e) => e.copy()).toList());
   }
 }
 
