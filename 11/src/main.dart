@@ -7,6 +7,7 @@ void main() async {
   var filePath = p.join(Directory.current.path, 'input', 'input.txt');
   File file = File(filePath);
   var lines = await file.readAsLines();
+  solvePuzzle1(lines);
   solvePuzzle2(lines);
 }
 
@@ -129,8 +130,8 @@ class MonkeyInTheMiddle {
   void playItem(Monkey monkey, Item item) {
     monkey.inspect(item, worryMode);
     if (item.worryLevel > optimizeDivisor) {
-      var newLevel = (item.worryLevel % optimizeDivisor) + optimizeDivisor;
-      //print("Too big, reduce from ${item.worryLevel} to $newLevel");
+      var newLevel = (item.worryLevel % optimizeDivisor);
+
       item.worryLevel = newLevel;
     }
 
