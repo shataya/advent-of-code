@@ -12,7 +12,7 @@ void main() async {
 
 void solvePuzzle1(List<String> lines) {
   Grid grid = parse(lines);
-  int length = findShortestPathLength(grid, grid.start!);
+  int length = findShortestPathLength(grid, null);
 
   print("Shortest path is $length");
 }
@@ -23,30 +23,29 @@ void solvePuzzle2(List<String> lines) {
   List<Node> cellsWithLowestHeight = grid.cells
       .expand((element) => element.where((element) => element.height == 0))
       .toList();
+  print("${cellsWithLowestHeight.length} starting points");
 
-  int? minLength;
-  for (var start in cellsWithLowestHeight) {
-    int length = findShortestPathLength(grid, start);
-    if (minLength == null || length < minLength) {
-      minLength = length;
-    }
-    start.type = NodeType.STANDARD;
-  }
-  print("Shortest path from any square with elevation a is $minLength");
+  int length = findShortestPathLength(grid, cellsWithLowestHeight);
+  print("Shortest path from any square with elevation a is $length");
 }
 
-int findShortestPathLength(Grid grid, Node start) {
-  grid.start!.type = NodeType.STANDARD;
-  grid.start = start;
-  start.type = NodeType.START;
+int findShortestPathLength(Grid grid, List<Node>? starts) {
   Graph graph = gridToGraph(grid);
 
   print("Created graph with ${graph.nodes.length} nodes");
   Dijkstra dijkstra = new Dijkstra();
   dijkstra.findShortestPath(graph);
-  print(
-      "Shortest path to destination is ${graph.destination.shortestPath.length}");
-  return graph.destination.shortestPath.length;
+
+  if (starts != null && starts.isNotEmpty) {
+    var list = starts
+        .map((element) => element.shortestPath.length)
+        .where((element) => element > 0)
+        .toList();
+    list.sort();
+    return list[0];
+  } else {
+    return graph.source.shortestPath.length;
+  }
 }
 
 Grid parse(List<String> lines) {
@@ -63,7 +62,7 @@ Graph gridToGraph(Grid grid) {
   Node start = grid.start!;
   Graph graph = Graph.empty(start, grid.end!);
 
-  checkNeighbors(start, graph);
+  checkNeighbors(grid.end!, graph);
 
   return graph;
 }
@@ -74,12 +73,10 @@ void checkNeighbors(Node current, Graph graph) {
   }
   current.shortestPath.clear();
   current.neighbors.clear();
-  if (current.type != NodeType.START) {
-    current.distance = int64MaxValue;
-  }
+  current.distance = int64MaxValue;
 
   graph.addNode(current);
-  if (current.type == NodeType.END) {
+  if (current.height == 0) {
     return;
   }
   checkNeighbor(current, current.top, graph);
@@ -91,26 +88,24 @@ void checkNeighbors(Node current, Graph graph) {
 void checkNeighbor(Node current, Node? other, Graph graph) {
   if (other != null &&
       isReachable(current, other) &&
-      other.type != NodeType.START) {
+      other.type != NodeType.END) {
     current.neighbors.putIfAbsent(other, () => 1);
     checkNeighbors(other, graph);
   }
 }
 
 bool isReachable(Node current, Node destination) {
-  return destination.height <= current.height ||
-      (destination.height - current.height == 1);
+  return destination.height >= current.height ||
+      (current.height - destination.height == 1);
 }
 
 class Dijkstra {
   Graph findShortestPath(Graph graph) {
-    Node source = graph.source;
-    source.distance = 0;
-
     Set<Node> permanentNodes = new HashSet<Node>();
     Set<Node> tmpNodes = new HashSet<Node>();
 
-    tmpNodes.add(source);
+    graph.destination.distance = 0;
+    tmpNodes.add(graph.destination);
 
     while (tmpNodes.isNotEmpty) {
       Node? current = getLowestDistanceNode(tmpNodes);
