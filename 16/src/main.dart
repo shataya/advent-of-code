@@ -11,6 +11,9 @@ void main() async {
   solvePuzzle(valves);
 }
 
+int maxNumberOfValvesToOpen = 0;
+Map<String, Valve> valvesMap = {};
+
 List<Valve> parse(List<String> input) {
   List<Valve> valves = [];
   for (var line in input) {
@@ -39,136 +42,162 @@ List<Valve> parse(List<String> input) {
   return valves;
 }
 
+Map<String, Map<int, Map<OpenValves, int>>> results = {};
+
 void solvePuzzle(List<Valve> valves) {
-  List<Simulation> sims = [];
-  Valve start = valves.firstWhere((element) => element.name == "AA");
-  int maxReleased = 0;
-  int number = 0;
-  sims.add(new Simulation(start, number));
-
-  List<Simulation> toAdd = [];
-  List<Simulation> toDelete = [];
-  while (sims.any((s) => s.minutes < 30)) {
-    toAdd.clear();
-    toDelete.clear();
-
-    print("${sims.length} simulations are running...");
-    var index = 0;
-    for (Simulation sim in sims) {
-      index++;
-      if (index == 0 || index % 1000 == 0) {
-        print("sim $index ...");
-      }
-      if (sim.finished) {
-        if (sim.released > maxReleased) {
-          maxReleased = sim.released;
-        }
-        toDelete.add(sim);
-        continue;
-      }
-      var couldBeOpened = sim.isCurrentNotOpenAndFlowRateGreaterThanZero();
-
-      if (couldBeOpened) {
-        number++;
-        var copy = sim.copy(number);
-        copy.simulate(true, null);
-        if (checkIfBetter(toAdd, copy) && checkIfBetter(sims, copy)) {
-          //print("$copy is better (copy 1)");
-          toAdd.add(copy);
-        }
-      }
-
-      if (sim.current.to.length > 1) {
-        for (var to in sim.current.to.skip(1)) {
-          number++;
-          var copy = sim.copy(number);
-          copy.simulate(false, to);
-          if (checkIfBetter(toAdd, copy) && checkIfBetter(sims, copy)) {
-            //print("$copy is better (copy 2)");
-            toAdd.add(copy);
-          }
-        }
-      }
-      sim.simulate(false, sim.current.to[0]);
-      if (!checkIfBetter(toAdd, sim) || !checkIfBetter(sims, sim)) {
-        toDelete.add(sim);
-      } else {
-        //print("$sim is better (default)");
-      }
-    }
-    sims.addAll(toAdd);
-    toDelete.forEach((element) {
-      sims.remove(element);
-    });
-  }
-
-  for (var sim in sims) {
-    if (sim.released > maxReleased) {
-      maxReleased = sim.released;
-    }
-  }
-  print("Most pressure released: $maxReleased");
+  valves.forEach((v) {
+    valvesMap.putIfAbsent(v.name, () => v);
+  });
+  Valve start = valves.firstWhere((v) => v.name == "AA");
+  maxNumberOfValvesToOpen = valves.where((v) => v.rate > 0).length;
+  print("Max number of valves to open: $maxNumberOfValvesToOpen");
+  Simulation simulation = new Simulation(start);
+  int maxReleased = findMaxReleased(simulation);
+  print("Max released: $maxReleased");
 }
 
-bool checkIfBetter(List<Simulation> sims, Simulation copy) {
-  bool isOtherBetter = sims.any((other) =>
-      other != copy &&
-      other.current == copy.current &&
-      other.released >= copy.released &&
-      other.minutes <= copy.minutes &&
-      other.open.containsAll(copy.open));
-  return !isOtherBetter;
+int findMaxReleased(Simulation sim) {
+  if (sim.finished) {
+    return sim.released;
+  } else {
+    return max(sim.current.to
+        .map((e) => copyAndGoTo(sim, e))
+        .where((element) => element != null)
+        .map((e) => findMaxReleased(e!))
+        .toList());
+  }
+}
+
+Simulation? copyAndGoTo(Simulation toCopy, Valve to) {
+  var sim = Simulation.copy(toCopy).goTo(to);
+  if (!results.containsKey(sim.current.name)) {
+    results.putIfAbsent(
+        sim.current.name,
+        () => {
+              sim.minutes: {sim.open: sim.released}
+            });
+    return sim;
+  } else {
+    var anyBetter = results[sim.current.name]!.entries.any((minutesMap) =>
+        minutesMap.key <= sim.minutes &&
+        minutesMap.value.entries.any((openMap) =>
+            openMap.key.values.containsAll(sim.open.values) &&
+            openMap.value >= sim.released));
+
+    if (anyBetter) {
+      return null;
+    } else {
+      results[sim.current.name]!
+          .entries
+          .where((minutesMap) => minutesMap.key >= sim.minutes)
+          .forEach((minutesMap) {
+        minutesMap.value.removeWhere((key, value) =>
+            sim.open.values.containsAll(key.values) && value < sim.released);
+      });
+
+      results.update(sim.current.name, (value) {
+        value.putIfAbsent(sim.minutes, () => {});
+        value.update(sim.minutes, (openReleaseMap) {
+          openReleaseMap.update(sim.open, (value) => sim.released,
+              ifAbsent: () => sim.released);
+
+          return openReleaseMap;
+        });
+        return value;
+      });
+
+      return sim;
+    }
+  }
+}
+
+int max(List<int> list) {
+  if (list.isEmpty) {
+    return -1;
+  }
+  list.sort();
+  return list.last;
 }
 
 class Simulation {
-  final int number;
-  int minutes = 0;
-  final Set<Valve> open;
-  int released = 0;
+  final OpenValves open;
+  int released;
   Valve current;
-  Valve? next;
-
-  Simulation(this.current, this.number) : this.open = new HashSet();
+  int minutes;
 
   bool get finished => minutes == 30;
 
-  @override
-  String toString() {
-    return "[$number] Current: ${current.name}, Released: $released, Minutes: $minutes, Opened: ${open.map((e) => e.name).join(", ")}";
-  }
+  Simulation.copy(Simulation other)
+      : this.open = other.open.copy(),
+        this.released = other.released,
+        this.current = other.current,
+        this.minutes = other.minutes;
 
-  Simulation copy(int number) {
-    var copy = new Simulation(this.current, number);
-    copy.released = this.released;
-    copy.minutes = this.minutes;
-    copy.open.addAll(this.open);
-    return copy;
-  }
+  Simulation(this.current)
+      : this.minutes = 0,
+        this.released = 0,
+        this.open = new OpenValves();
 
-  bool isCurrentNotOpenAndFlowRateGreaterThanZero() {
-    return this.current.rate > 0 && !this.open.contains(current);
-  }
-
-  void simulate(bool openValve, Valve? next) {
-    if (minutes == 30) {
-      return;
-    }
-    minutes++;
-    var old = released;
-    open.forEach((v) {
-      released += v.rate;
-    });
-    //print(
-    //  "Current [${current.name}], Opened: ${open.map((e) => e.name).join(", ")}, releasing ${released - old} pressure (all: $released)");
-    if (openValve) {
+  void _openValve() {
+    if (finished) return;
+    if (current.rate > 0 && !open.has(current)) {
+      _release();
       open.add(current);
-      if (next != null) {
-        next = next;
-        simulate(false, next);
+      if (open.maxReached) {
+        while (!finished) {
+          _release();
+        }
       }
-    } else if (next != null) {
-      current = next;
     }
+  }
+
+  void _release() {
+    if (finished) return;
+    minutes++;
+    open.values.forEach((v) {
+      released += valvesMap[v]!.rate;
+    });
+  }
+
+  Simulation goTo(Valve destination) {
+    if (finished) return this;
+    _release();
+    current = destination;
+    _openValve();
+    return this;
+  }
+}
+
+class OpenValves {
+  final Set<String> values;
+
+  OpenValves() : this.values = new HashSet();
+
+  int get length => values.length;
+
+  bool get maxReached => this.length >= maxNumberOfValvesToOpen;
+
+  @override
+  bool operator ==(Object other) =>
+      other is OpenValves &&
+      this.values.length == other.values.length &&
+      this.values.containsAll(other.values);
+
+  @override
+  int get hashCode => values.hashCode;
+
+  OpenValves copy() {
+    var tmp = new OpenValves();
+    tmp.values.addAll(this.values);
+    return tmp;
+  }
+
+  bool has(Valve valve) {
+    return this.values.contains(valve.name);
+  }
+
+  void add(Valve valve) {
+    this.values.add(valve.name);
   }
 }
 
